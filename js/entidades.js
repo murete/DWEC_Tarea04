@@ -669,3 +669,630 @@ console.log(coord1.longitude); // -3.7038
 console.log(coord1.toString()); // "(40.4168, -3.7038)"
 console.log(JSON.stringify(coord1)); // {"latitude":40.4168,"longitude":-3.7038}
 
+
+/* VideoSystem: Singleton + Flyweight */
+
+class VideoSystemError extends Error {}
+class InvalidArgumentError extends VideoSystemError {}
+class AlreadyExistsError extends VideoSystemError {}
+class NotFoundError extends VideoSystemError {}
+
+class VideoSystem {
+  /* ---------- SINGLETON ---------- */
+  static getInstance(name = "VideoSystem") {
+    if (!VideoSystem._instance) {
+      VideoSystem._instance = new VideoSystem(name);
+    }
+    return VideoSystem._instance;
+  }
+
+  constructor(name) {
+    if (VideoSystem._instance) {
+      throw new Error(
+        "Use VideoSystem.getInstance() para obtener la instancia",
+      );
+    }
+    if (!name || typeof name !== "string") {
+      throw new InvalidArgumentError("El nombre no puede ser vacío");
+    }
+
+    this._name = name;
+
+    this._categories = new Map(); // name → Category
+    this._users = new Map(); // username → User
+    this._productions = new Map(); // title → Production
+    this._actors = new Map(); // key → Person
+    this._directors = new Map(); // key → Person
+
+    this._personCache = new Map(); // key → Person
+    this._categoryCache = new Map(); // name → Category
+    this._resourceCache = new Map(); // link → Resource
+
+    this._defaultCategory = new Category("Default", "Categoría por defecto");
+    this._categories.set(this._defaultCategory.name, this._defaultCategory);
+  }
+
+  /* ============================================================
+      NAME
+  ============================================================ */
+  get name() {
+    return this._name;
+  }
+  set name(value) {
+    if (!value || typeof value !== "string") {
+      throw new InvalidArgumentError("El nombre no puede ser vacío");
+    }
+    this._name = value;
+  }
+
+  /* ============================================================
+      CATEGORIES
+  ============================================================ */
+  get categories() {
+    return this._categories.values();
+  }
+
+  addCategory(...cats) {
+    for (const cat of cats) {
+      if (!(cat instanceof Category)) {
+        throw new InvalidArgumentError(
+          "La categoría no puede ser null o no es un objeto Category.",
+        );
+      }
+      if (this._categories.has(cat.name)) {
+        throw new AlreadyExistsError(`La categoría "${cat.name}" ya existe.`);
+      }
+      this._categories.set(cat.name, cat);
+      this._categoryCache.set(cat.name, cat);
+    }
+    return this._categories.size;
+  }
+
+  removeCategory(cat) {
+    if (!(cat instanceof Category)) {
+      throw new InvalidArgumentError("La categoría no es un objeto Category.");
+    }
+    if (!this._categories.has(cat.name)) {
+      throw new NotFoundError("La categoría no está registrada.");
+    }
+    if (cat === this._defaultCategory) {
+      throw new InvalidArgumentError(
+        "No se puede eliminar la categoría por defecto.",
+      );
+    }
+
+    for (const prod of this._productions.values()) {
+      if (
+        typeof prod.categories === "function" &&
+        prod.categories().includes(cat)
+      ) {
+        prod.removeCategory(cat);
+        prod.addCategory(this._defaultCategory);
+      }
+    }
+
+    this._categories.delete(cat.name);
+    this._categoryCache.delete(cat.name);
+    return this._categories.size;
+  }
+
+  /* ============================================================
+      USERS
+  ============================================================ */
+  get users() {
+    return this._users.values();
+  }
+
+  addUser(...users) {
+    for (const user of users) {
+      if (!(user instanceof User)) {
+        throw new InvalidArgumentError(
+          "El usuario no puede ser null o no es un objeto User.",
+        );
+      }
+      if (this._users.has(user.username)) {
+        throw new AlreadyExistsError("El username ya existe.");
+      }
+      for (const u of this._users.values()) {
+        if (u.email === user.email) {
+          throw new AlreadyExistsError("El email ya existe.");
+        }
+      }
+      this._users.set(user.username, user);
+    }
+    return this._users.size;
+  }
+
+  removeUser(user) {
+    if (!(user instanceof User)) {
+      throw new InvalidArgumentError(
+        "El usuario no puede ser null o no es un objeto User.",
+      );
+    }
+    if (!this._users.has(user.username)) {
+      throw new NotFoundError("El usuario no existe en el sistema.");
+    }
+    this._users.delete(user.username);
+    return this._users.size;
+  }
+
+  /* ============================================================
+      PRODUCTIONS
+  ============================================================ */
+  get productions() {
+    return this._productions.values();
+  }
+
+  addProduction(...prods) {
+    for (const prod of prods) {
+      if (!(prod instanceof Production)) {
+        throw new InvalidArgumentError(
+          "La producción no puede ser null o no es un objeto Production.",
+        );
+      }
+      if (this._productions.has(prod.title)) {
+        throw new AlreadyExistsError("La producción ya existe.");
+      }
+      this._productions.set(prod.title, prod);
+    }
+    return this._productions.size;
+  }
+
+  removeProduction(prod) {
+    if (!(prod instanceof Production)) {
+      throw new InvalidArgumentError(
+        "La producción no puede ser null o no es un objeto Production.",
+      );
+    }
+    if (!this._productions.has(prod.title)) {
+      throw new NotFoundError("La producción no está registrada.");
+    }
+    this._productions.delete(prod.title);
+    return this._productions.size;
+  }
+
+  /* ============================================================
+      ACTORS
+  ============================================================ */
+  get actors() {
+    return this._actors.values();
+  }
+
+  addActor(...persons) {
+    for (const p of persons) {
+      if (!(p instanceof Person)) {
+        throw new InvalidArgumentError(
+          "El actor no puede ser null o no es un objeto Person.",
+        );
+      }
+      const key = this._personKey(p);
+      if (this._actors.has(key)) {
+        throw new AlreadyExistsError("El actor ya existe.");
+      }
+      this._actors.set(key, p);
+      this._personCache.set(key, p);
+    }
+    return this._actors.size;
+  }
+
+  removeActor(p) {
+    if (!(p instanceof Person)) {
+      throw new InvalidArgumentError(
+        "El actor no puede ser null o no es un objeto Person.",
+      );
+    }
+    const key = this._personKey(p);
+    if (!this._actors.has(key)) {
+      throw new NotFoundError("El actor no existe en el sistema.");
+    }
+    this._actors.delete(key);
+    this._personCache.delete(key);
+    return this._actors.size;
+  }
+
+  /* ============================================================
+      DIRECTORS
+  ============================================================ */
+  get directors() {
+    return this._directors.values();
+  }
+
+  addDirector(...persons) {
+    for (const p of persons) {
+      if (!(p instanceof Person)) {
+        throw new InvalidArgumentError(
+          "El director no puede ser null o no es un objeto Person.",
+        );
+      }
+      const key = this._personKey(p);
+      if (this._directors.has(key)) {
+        throw new AlreadyExistsError("El director ya existe.");
+      }
+      this._directors.set(key, p);
+      this._personCache.set(key, p);
+    }
+    return this._directors.size;
+  }
+
+  removeDirector(p) {
+    if (!(p instanceof Person)) {
+      throw new InvalidArgumentError(
+        "El director no puede ser null o no es un objeto Person.",
+      );
+    }
+    const key = this._personKey(p);
+    if (!this._directors.has(key)) {
+      throw new NotFoundError("El director no existe en el sistema.");
+    }
+    this._directors.delete(key);
+    this._personCache.delete(key);
+    return this._directors.size;
+  }
+
+  /* ============================================================
+      ASSIGN / DEASSIGN CATEGORY
+  ============================================================ */
+  assignCategory(category, ...productions) {
+    if (!(category instanceof Category)) {
+      throw new InvalidArgumentError(
+        "Category es null o no es un objeto Category.",
+      );
+    }
+    if (!this._categories.has(category.name)) {
+      this.addCategory(category);
+    }
+
+    for (const prod of productions) {
+      if (!(prod instanceof Production)) {
+        throw new InvalidArgumentError(
+          "Production es null o no es un objeto Production.",
+        );
+      }
+      if (!this._productions.has(prod.title)) {
+        this.addProduction(prod);
+      }
+      prod.addCategory(category);
+    }
+
+    return this.getProductionsCategory(category).length;
+  }
+
+  deassignCategory(category, ...productions) {
+    if (!(category instanceof Category)) {
+      throw new InvalidArgumentError(
+        "Category es null o no es un objeto Category.",
+      );
+    }
+
+    for (const prod of productions) {
+      if (!(prod instanceof Production)) {
+        throw new InvalidArgumentError(
+          "Production es null o no es un objeto Production.",
+        );
+      }
+      prod.removeCategory(category);
+    }
+
+    return this.getProductionsCategory(category).length;
+  }
+
+  /* ============================================================
+      ASSIGN / DEASSIGN DIRECTOR
+  ============================================================ */
+  assignDirector(person, ...productions) {
+    if (!(person instanceof Person)) {
+      throw new InvalidArgumentError(
+        "Person es null o no es un objeto Person.",
+      );
+    }
+
+    const key = this._personKey(person);
+    if (!this._directors.has(key)) {
+      this.addDirector(person);
+    }
+
+    for (const prod of productions) {
+      if (!(prod instanceof Production)) {
+        throw new InvalidArgumentError(
+          "Production es null o no es un objeto Production.",
+        );
+      }
+      if (!this._productions.has(prod.title)) {
+        this.addProduction(prod);
+      }
+      prod.assignDirector(person);
+    }
+
+    return this.getProductionsDirector(person).length;
+  }
+
+  deassignDirector(person, ...productions) {
+    if (!(person instanceof Person)) {
+      throw new InvalidArgumentError(
+        "Person es null o no es un objeto Person.",
+      );
+    }
+
+    for (const prod of productions) {
+      if (!(prod instanceof Production)) {
+        throw new InvalidArgumentError(
+          "Production es null o no es un objeto Production.",
+        );
+      }
+      prod.deassignDirector(person);
+    }
+
+    return this.getProductionsDirector(person).length;
+  }
+
+  /* ============================================================
+      ASSIGN / DEASSIGN ACTOR
+  ============================================================ */
+  assignActor(person, role, ...productions) {
+    if (!(person instanceof Person)) {
+      throw new InvalidArgumentError(
+        "Person es null o no es un objeto Person.",
+      );
+    }
+
+    const key = this._personKey(person);
+    if (!this._actors.has(key)) {
+      this.addActor(person);
+    }
+
+    for (const prod of productions) {
+      if (!(prod instanceof Production)) {
+        throw new InvalidArgumentError(
+          "Production es null o no es un objeto Production.",
+        );
+      }
+      if (!this._productions.has(prod.title)) {
+        this.addProduction(prod);
+      }
+      prod.assignActor(person, role);
+    }
+
+    return this.getProductionsActor(person).length;
+  }
+
+  deassignActor(person, ...productions) {
+    if (!(person instanceof Person)) {
+      throw new InvalidArgumentError(
+        "Person es null o no es un objeto Person.",
+      );
+    }
+
+    for (const prod of productions) {
+      if (!(prod instanceof Production)) {
+        throw new InvalidArgumentError(
+          "Production es null o no es un objeto Production.",
+        );
+      }
+      prod.deassignActor(person);
+    }
+
+    return this.getProductionsActor(person).length;
+  }
+
+  /* ============================================================
+      GETTERS ESPECIALES
+  ============================================================ */
+  getCast(production) {
+    if (!(production instanceof Production)) {
+      throw new InvalidArgumentError(
+        "Production es null o no es un objeto Production.",
+      );
+    }
+    if (typeof production.getCast !== "function") {
+      return [][Symbol.iterator]();
+    }
+    const cast = production.getCast(); // array de { actor, role }
+    return cast[Symbol.iterator]();
+  }
+
+  getProductionsDirector(person) {
+    if (!(person instanceof Person)) {
+      throw new InvalidArgumentError(
+        "Person es null o no es un objeto Person.",
+      );
+    }
+    const result = [];
+    for (const prod of this._productions.values()) {
+      if (
+        typeof prod.getDirectors === "function" &&
+        prod.getDirectors().includes(person)
+      ) {
+        result.push(prod);
+      }
+    }
+    return result[Symbol.iterator]();
+  }
+
+  getProductionsActor(person) {
+    if (!(person instanceof Person)) {
+      throw new InvalidArgumentError(
+        "Person es null o no es un objeto Person.",
+      );
+    }
+    const result = [];
+    for (const prod of this._productions.values()) {
+      if (typeof prod.getCast === "function") {
+        const cast = prod.getCast(); // [{actor, role}]
+        for (const c of cast) {
+          if (c.actor === person) {
+            result.push({ production: prod, role: c.role });
+          }
+        }
+      }
+    }
+    return result[Symbol.iterator]();
+  }
+
+  getProductionsCategory(category) {
+    if (!(category instanceof Category)) {
+      throw new InvalidArgumentError(
+        "Category es null o no es un objeto Category.",
+      );
+    }
+    const result = [];
+    for (const prod of this._productions.values()) {
+      if (
+        typeof prod.categories === "function" &&
+        prod.categories().includes(category)
+      ) {
+        result.push(prod);
+      }
+    }
+    return result[Symbol.iterator]();
+  }
+
+  /* ============================================================
+      CREATE (Flyweight helpers)
+  ============================================================ */
+  createPerson(name, lastname1, lastname2 = "", born, picture = "") {
+    if (!name || !lastname1) {
+      throw new InvalidArgumentError("name y lastname1 son obligatorios.");
+    }
+    const bornKey = born ? new Date(born).toISOString().slice(0, 10) : "";
+    const key = `${name}|${lastname1}|${bornKey}`;
+    if (this._personCache.has(key)) return this._personCache.get(key);
+
+    const p = new Person(
+      name,
+      lastname1,
+      lastname2,
+      born ? new Date(born) : null,
+      picture,
+    );
+    this._personCache.set(key, p);
+    return p; // NO se añade al manager
+  }
+
+  createProduction(type, ...args) {
+    // type: Movie o Serie (constructor), o string 'movie'/'serie'
+    let title = args[0];
+    if (this._productions.has(title)) {
+      return this._productions.get(title);
+    }
+
+    let prod;
+    if (typeof type === "function") {
+      prod = new type(...args);
+    } else if (type === "movie") {
+      const [
+        t,
+        nationality,
+        publication,
+        synopsis,
+        image,
+        resource,
+        locations,
+      ] = args;
+      prod = new Movie(
+        t,
+        nationality,
+        publication,
+        synopsis,
+        image,
+        resource,
+        locations,
+      );
+    } else if (type === "serie") {
+      const [
+        t,
+        nationality,
+        publication,
+        synopsis,
+        image,
+        resources,
+        locations,
+        seasons,
+      ] = args;
+      prod = new Serie(
+        t,
+        nationality,
+        publication,
+        synopsis,
+        image,
+        resources,
+        locations,
+        seasons,
+      );
+    } else {
+      throw new InvalidArgumentError("Tipo de producción desconocido.");
+    }
+    return prod; // NO se añade al manager
+  }
+
+  createUser(username, email, password) {
+    if (!username || !email || !password) {
+      throw new InvalidArgumentError(
+        "username, email y password son obligatorios.",
+      );
+    }
+    if (this._users.has(username)) {
+      return this._users.get(username);
+    }
+    return new User(username, email, password); // NO se añade al manager
+  }
+
+  createCategory(name, description = "") {
+    if (!name) {
+      throw new InvalidArgumentError("name es obligatorio.");
+    }
+    if (this._categories.has(name)) {
+      return this._categories.get(name);
+    }
+    if (this._categoryCache.has(name)) {
+      return this._categoryCache.get(name);
+    }
+    const c = new Category(name, description);
+    this._categoryCache.set(name, c);
+    return c; // NO se añade al manager
+  }
+
+  /* ============================================================
+      FIND / FILTER PRODUCTIONS
+  ============================================================ */
+  findProductions(filterFn, sortFn) {
+    if (typeof filterFn !== "function") {
+      throw new InvalidArgumentError("filterFn debe ser una función.");
+    }
+    let arr = Array.from(this._productions.values()).filter(filterFn);
+    if (typeof sortFn === "function") {
+      arr.sort(sortFn);
+    }
+    return arr[Symbol.iterator]();
+  }
+
+  filterProductionsInCategory(category, filterFn, sortFn) {
+    if (!(category instanceof Category)) {
+      throw new InvalidArgumentError("Category es null o no está registrada.");
+    }
+    if (!this._categories.has(category.name)) {
+      throw new InvalidArgumentError("Category no está registrada.");
+    }
+
+    let arr = Array.from(this.getProductionsCategory(category));
+    if (typeof filterFn === "function") {
+      arr = arr.filter(filterFn);
+    }
+    if (typeof sortFn === "function") {
+      arr.sort(sortFn);
+    }
+    return arr[Symbol.iterator]();
+  }
+
+  /* ============================================================
+      UTILIDAD INTERNA
+  ============================================================ */
+  _personKey(p) {
+    const bornStr =
+      p.born instanceof Date
+        ? p.born.toISOString().slice(0, 10)
+        : p.born
+          ? String(p.born)
+          : "";
+    return `${p.name}|${p.lastname1 || ""}|${bornStr}`;
+  }
+}
