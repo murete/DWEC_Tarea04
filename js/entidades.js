@@ -295,8 +295,6 @@ class Production {
 // TEST
 
 // Constructor Movie (hereda de Production)
-// Asume que Production, Resource y Coordinate ya están definidos como en las implementaciones previas.
-
 class Movie extends Production {
   constructor(
     title,
@@ -308,69 +306,78 @@ class Movie extends Production {
     locations = [],
   ) {
     super(title, nationality, publication, synopsis, image);
-
-    // inicializar usando setters para validar
     this.resource = resource;
     this.locations = locations;
   }
 
-  /* Getter / Setter resource */
+  /* Normaliza un literal {latitude, longitude} */
+  static _normalizeLocation(item) {
+    if (!item || typeof item !== "object") {
+      throw new TypeError(
+        "Cada location debe ser un objeto literal con { latitude, longitude }",
+      );
+    }
+    const lat = Number(item.latitude);
+    const lon = Number(item.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      throw new TypeError("latitude y longitude deben ser números válidos");
+    }
+    return { latitude: lat, longitude: lon };
+  }
+
+  /* RESOURCE */
   get resource() {
     return this._resource || null;
   }
 
   set resource(value) {
-    if (value === null || value === undefined) {
+    if (value == null) {
       this._resource = null;
       return;
     }
-    // Validar que sea instancia de Resource
     if (!(value instanceof Resource)) {
-      throw new TypeError("resource debe ser una instancia de Resource o null");
+      throw new TypeError("resource debe ser instancia de Resource o null");
     }
     this._resource = value;
   }
 
-  /* Getter / Setter locations */
+  /* LOCATIONS */
   get locations() {
-    // devolver copia para evitar mutaciones externas directas
-    return Array.isArray(this._locations) ? [...this._locations] : [];
+    return Array.isArray(this._locations)
+      ? this._locations.map((l) => ({
+          latitude: l.latitude,
+          longitude: l.longitude,
+        }))
+      : [];
   }
 
   set locations(value) {
     if (!Array.isArray(value)) {
-      throw new TypeError("locations debe ser un array de Coordinate");
+      throw new TypeError(
+        "locations debe ser un array de objetos literales { latitude, longitude }",
+      );
     }
-    // validar cada elemento
-    for (const item of value) {
-      if (!(item instanceof Coordinate)) {
-        throw new TypeError(
-          "Cada elemento de locations debe ser una instancia de Coordinate",
-        );
-      }
-    }
-    // almacenar copia para encapsulación
-    this._locations = [...value];
+    this._locations = value.map((item) => Movie._normalizeLocation(item));
   }
 
-  /* Métodos auxiliares para manipular locations */
-  addLocation(coord) {
-    if (!(coord instanceof Coordinate))
-      throw new TypeError("coord debe ser Coordinate");
+  addLocation(loc) {
+    const c = Movie._normalizeLocation(loc);
     if (!Array.isArray(this._locations)) this._locations = [];
-    this._locations.push(coord);
+    this._locations.push(c);
     return this._locations.length;
   }
 
-  removeLocation(coord) {
+  removeLocation(loc) {
+    const c = Movie._normalizeLocation(loc);
     if (!Array.isArray(this._locations)) return 0;
-    const idx = this._locations.indexOf(coord);
+    const idx = this._locations.findIndex(
+      (x) => x.latitude === c.latitude && x.longitude === c.longitude,
+    );
     if (idx === -1) return this._locations.length;
     this._locations.splice(idx, 1);
     return this._locations.length;
   }
 
-  /* Representaciones */
   toString() {
     const base = super.toString();
     const res = this._resource ? `, ${this._resource.toString()}` : "";
@@ -379,7 +386,21 @@ class Movie extends Production {
       : 0;
     return `Movie: ${base}${res} [locations: ${locCount}]`;
   }
+
+  toJSON() {
+    return {
+      ...super.toJSON(),
+      resource: this._resource ? this._resource.toJSON() : null,
+      locations: Array.isArray(this._locations)
+        ? this._locations.map((c) => ({
+            latitude: c.latitude,
+            longitude: c.longitude,
+          }))
+        : [],
+    };
+  }
 }
+
 // TEST
 
 // Constructor Series (hereda de Production)
@@ -668,7 +689,6 @@ console.log(coord1.latitude); // 40.4168
 console.log(coord1.longitude); // -3.7038
 console.log(coord1.toString()); // "(40.4168, -3.7038)"
 console.log(JSON.stringify(coord1)); // {"latitude":40.4168,"longitude":-3.7038}
-
 
 /* VideoSystem: Singleton + Flyweight */
 
@@ -1296,3 +1316,245 @@ class VideoSystem {
     return `${p.name}|${p.lastname1 || ""}|${bornStr}`;
   }
 }
+
+console.log("==============================================");
+console.log("      TEST COMPLETO DEL SISTEMA DE VIDEO");
+console.log("==============================================\n");
+
+/* ============================================================
+   CREACIÓN DE OBJETOS BASE
+============================================================ */
+
+const vs = VideoSystem.getInstance("MiSistema");
+
+console.log("Nombre del sistema:", vs.name);
+
+/* ============================================================
+   TEST: createCategory / createUser / createPerson / createProduction
+============================================================ */
+
+console.log(
+  "\n--- TEST: createCategory / createUser / createPerson / createProduction ---",
+);
+
+const catA = vs.createCategory("Acción", "Películas de acción");
+const catB = vs.createCategory("Drama", "Películas dramáticas");
+
+const userA = vs.createUser("ana", "ana@example.com", "123456");
+const userB = vs.createUser("luis", "luis@example.com", "abcdef");
+
+const actorA = vs.createPerson("Keanu", "Reeves", "", "1964-09-02");
+const actorB = vs.createPerson("Bryan", "Cranston", "", "1956-03-07");
+
+const directorA = vs.createPerson("Lana", "Wachowski", "", "1965-06-21");
+const directorB = vs.createPerson("Vince", "Gilligan", "", "1967-02-10");
+
+const prodMovie = vs.createProduction(
+  "movie",
+  "Matrix",
+  "USA",
+  "1999-03-31",
+  "Sci-fi",
+  "matrix.jpg",
+  null,
+  [{ latitude: 40.4, longitude: -3.7 }],
+);
+
+const prodSerie = vs.createProduction(
+  "serie",
+  "Breaking Bad",
+  "USA",
+  "2008-01-20",
+  "Drama",
+  "bb.jpg",
+  [{ duration: 45, link: "ep1.mp4" }],
+  [{ latitude: 35.0844, longitude: -106.6504 }],
+  5,
+);
+
+console.log("createCategory OK:", catA, catB);
+console.log("createUser OK:", userA, userB);
+console.log("createPerson OK:", actorA, actorB, directorA, directorB);
+console.log("createProduction OK:", prodMovie.title, prodSerie.title);
+
+/* ============================================================
+   TEST: addCategory / addUser / addActor / addDirector / addProduction
+============================================================ */
+
+console.log(
+  "\n--- TEST: addCategory / addUser / addActor / addDirector / addProduction ---",
+);
+
+vs.addCategory(catA, catB);
+vs.addUser(userA, userB);
+vs.addActor(actorA, actorB);
+vs.addDirector(directorA, directorB);
+vs.addProduction(prodMovie, prodSerie);
+
+console.log(
+  "Categorías:",
+  [...vs.categories].map((c) => c.name),
+);
+console.log(
+  "Usuarios:",
+  [...vs.users].map((u) => u.username),
+);
+console.log(
+  "Actores:",
+  [...vs.actors].map((a) => a.name),
+);
+console.log(
+  "Directores:",
+  [...vs.directors].map((d) => d.name),
+);
+console.log(
+  "Producciones:",
+  [...vs.productions].map((p) => p.title),
+);
+
+/* ============================================================
+   TEST: assignCategory / deassignCategory
+============================================================ */
+
+console.log("\n--- TEST: assignCategory / deassignCategory ---");
+
+vs.assignCategory(catA, prodMovie);
+vs.assignCategory(catB, prodSerie);
+
+console.log(
+  "Producciones en Acción:",
+  [...vs.getProductionsCategory(catA)].map((p) => p.title),
+);
+console.log(
+  "Producciones en Drama:",
+  [...vs.getProductionsCategory(catB)].map((p) => p.title),
+);
+
+vs.deassignCategory(catA, prodMovie);
+console.log(
+  "Tras deassignCategory Acción:",
+  [...vs.getProductionsCategory(catA)].map((p) => p.title),
+);
+
+/* ============================================================
+   TEST: assignDirector / deassignDirector
+============================================================ */
+
+console.log("\n--- TEST: assignDirector / deassignDirector ---");
+
+vs.assignDirector(directorA, prodMovie);
+vs.assignDirector(directorB, prodSerie);
+
+console.log(
+  "Producciones dirigidas por Wachowski:",
+  [...vs.getProductionsDirector(directorA)].map((p) => p.title),
+);
+
+vs.deassignDirector(directorA, prodMovie);
+console.log(
+  "Tras deassignDirector Wachowski:",
+  [...vs.getProductionsDirector(directorA)].map((p) => p.title),
+);
+
+/* ============================================================
+   TEST: assignActor / deassignActor / getCast / getProductionsActor
+============================================================ */
+
+console.log(
+  "\n--- TEST: assignActor / deassignActor / getCast / getProductionsActor ---",
+);
+
+vs.assignActor(actorA, "Neo", prodMovie);
+vs.assignActor(actorB, "Walter White", prodSerie);
+
+console.log("Reparto de Matrix:", [...vs.getCast(prodMovie)]);
+console.log("Reparto de Breaking Bad:", [...vs.getCast(prodSerie)]);
+
+console.log(
+  "Producciones de Keanu Reeves:",
+  [...vs.getProductionsActor(actorA)].map(
+    (o) => `${o.production.title} (${o.role})`,
+  ),
+);
+
+vs.deassignActor(actorA, prodMovie);
+console.log("Tras deassignActor Keanu:", [...vs.getProductionsActor(actorA)]);
+
+/* ============================================================
+   TEST: findProductions
+============================================================ */
+
+console.log("\n--- TEST: findProductions ---");
+
+const longTitles = vs.findProductions(
+  (p) => p.title.length > 5,
+  (a, b) => a.title.localeCompare(b.title),
+);
+
+console.log(
+  "Producciones con título largo:",
+  [...longTitles].map((p) => p.title),
+);
+
+/* ============================================================
+   TEST: filterProductionsInCategory
+============================================================ */
+
+console.log("\n--- TEST: filterProductionsInCategory ---");
+
+vs.assignCategory(catA, prodMovie);
+vs.assignCategory(catA, prodSerie);
+
+const filtered = vs.filterProductionsInCategory(
+  catA,
+  (p) => p.title.includes("a"),
+  (a, b) => a.title.localeCompare(b.title),
+);
+
+console.log(
+  "Producciones en Acción filtradas:",
+  [...filtered].map((p) => p.title),
+);
+
+/* ============================================================
+   TEST: removeCategory / removeUser / removeActor / removeDirector / removeProduction
+============================================================ */
+
+console.log(
+  "\n--- TEST: removeCategory / removeUser / removeActor / removeDirector / removeProduction ---",
+);
+
+vs.removeUser(userA);
+vs.removeActor(actorB);
+vs.removeDirector(directorB);
+vs.removeProduction(prodSerie);
+vs.removeCategory(catB);
+
+console.log(
+  "Usuarios restantes:",
+  [...vs.users].map((u) => u.username),
+);
+console.log(
+  "Actores restantes:",
+  [...vs.actors].map((a) => a.name),
+);
+console.log(
+  "Directores restantes:",
+  [...vs.directors].map((d) => d.name),
+);
+console.log(
+  "Producciones restantes:",
+  [...vs.productions].map((p) => p.title),
+);
+console.log(
+  "Categorías restantes:",
+  [...vs.categories].map((c) => c.name),
+);
+
+/* ============================================================
+   FIN DEL SCRIPT
+============================================================ */
+
+console.log("\n==============================================");
+console.log("      FIN DEL SCRIPT DE PRUEBAS COMPLETO");
+console.log("==============================================\n");
