@@ -202,6 +202,7 @@ class Book {
   }
 }
 
+// --- TESTEO COMPLETO DE LISTAS ---
 function testLists() {
   console.log("=== TESTEO COMPLETO DE LISTAS ===");
 
